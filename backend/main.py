@@ -1,11 +1,9 @@
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.orm import Session
-from . import models, database
 from pydantic import BaseModel
 from typing import List
-
-models.Base.metadata.create_all(bind=database.engine)
+from bson import ObjectId
+import database
 
 app = FastAPI(title="MediCare API", description="Hospital Management System API")
 
@@ -18,12 +16,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-def get_db():
-    db = database.SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+# Optional helper to convert MongoDB ObjectIds to strings
+def serialize_doc(doc):
+    if doc and "_id" in doc:
+        doc["id"] = str(doc["_id"])
+        del doc["_id"]
+    return doc
+
+def serialize_docs(docs):
+    return [serialize_doc(doc) for doc in docs]
 
 # Pydantic models for request validation
 class PatientRegistration(BaseModel):
@@ -33,7 +34,7 @@ class PatientRegistration(BaseModel):
     password: str
 
 class AppointmentBooking(BaseModel):
-    doctor_id: int
+    doctor_id: str
     patient_name: str
     date: str
     time: str
@@ -41,56 +42,64 @@ class AppointmentBooking(BaseModel):
 @app.on_event("startup")
 def seed_data():
     """Seed the database with initial doctor data if empty."""
-    db = database.SessionLocal()
-    if not db.query(models.Doctor).first():
+    db = database.get_db()
+    if db.doctors.count_documents({}) == 0:
         docs = [
-            models.Doctor(name="Dr. Sarah Connor", specialty="Cardiology", experience="10 Years"),
-            models.Doctor(name="Dr. John Smith", specialty="Neurology", experience="8 Years"),
-            models.Doctor(name="Dr. Emily Davis", specialty="Pediatrics", experience="5 Years"),
-            models.Doctor(name="Dr. Michael Brown", specialty="Orthopedics", experience="12 Years"),
-            models.Doctor(name="Dr. Jessica Wilson", specialty="Dermatology", experience="7 Years")
+            {"name": "Dr. Sarah Connor", "specialty": "Cardiology", "experience": "10 Years"},
+            {"name": "Dr. John Smith", "specialty": "Neurology", "experience": "8 Years"},
+            {"name": "Dr. Emily Davis", "specialty": "Pediatrics", "experience": "5 Years"},
+            {"name": "Dr. Michael Brown", "specialty": "Orthopedics", "experience": "12 Years"},
+            {"name": "Dr. Jessica Wilson", "specialty": "Dermatology", "experience": "7 Years"}
         ]
-        db.add_all(docs)
-        db.commit()
-    db.close()
+        db.doctors.insert_many(docs)
 
 @app.get("/doctors")
-def get_doctors(db: Session = Depends(get_db)):
+def get_doctors():
     """Fetch list of all doctors."""
-    return db.query(models.Doctor).all()
+    db = database.get_db()
+    docs = list(db.doctors.find())
+    return serialize_docs(docs)
 
 @app.post("/register")
-def register_patient(patient: PatientRegistration, db: Session = Depends(get_db)):
+def register_patient(patient: PatientRegistration):
     """Register a new patient."""
-    db_patient = db.query(models.Patient).filter(models.Patient.email == patient.email).first()
+    db = database.get_db()
+    db_patient = db.patients.find_one({"email": patient.email})
     if db_patient:
         raise HTTPException(status_code=400, detail="Email already registered")
     
-    new_patient = models.Patient(
-        name=patient.name,
-        email=patient.email,
-        phone=patient.phone,
-        password=patient.password
-    )
-    db.add(new_patient)
-    db.commit()
-    db.refresh(new_patient)
-    return {"message": "Registration successful", "patient_id": new_patient.id}
+    new_patient = patient.dict()
+    result = db.patients.insert_one(new_patient)
+    return {"message": "Registration successful", "patient_id": str(result.inserted_id)}
 
 @app.post("/appointment")
-def book_appointment(appt: AppointmentBooking, db: Session = Depends(get_db)):
+def book_appointment(appt: AppointmentBooking):
     """Book an appointment with a doctor."""
-    doctor = db.query(models.Doctor).filter(models.Doctor.id == appt.doctor_id).first()
+    db = database.get_db()
+    try:
+        doctor_id = ObjectId(appt.doctor_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid doctor ID format")
+        
+    doctor = db.doctors.find_one({"_id": doctor_id})
     if not doctor:
         raise HTTPException(status_code=404, detail="Doctor not found")
         
-    new_appt = models.Appointment(
-        doctor_id=appt.doctor_id,
-        patient_name=appt.patient_name,
-        date=appt.date,
-        time=appt.time
-    )
-    db.add(new_appt)
-    db.commit()
-    db.refresh(new_appt)
-    return {"message": "Appointment booked successfully", "appointment_id": new_appt.id}
+    new_appt = appt.dict()
+    result = db.appointments.insert_one(new_appt)
+    return {"message": "Appointment booked successfully", "appointment_id": str(result.inserted_id)}
+
+@app.get("/appointments")
+def get_appointments():
+    """Fetch list of all booked appointments."""
+    db = database.get_db()
+    appts = list(db.appointments.find())
+    return serialize_docs(appts)
+
+@app.get("/patients")
+def get_patients():
+    """Fetch list of all registered patients."""
+    db = database.get_db()
+    patients = list(db.patients.find())
+    return serialize_docs(patients)
+

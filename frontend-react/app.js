@@ -221,7 +221,7 @@ const Appointment = () => {
             const res = await fetch(`${API_BASE_URL}/appointment`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({...formData, doctor_id: parseInt(formData.doctor_id)})
+                body: JSON.stringify({...formData, doctor_id: formData.doctor_id})
             });
             const data = await res.json();
             if (res.ok) {

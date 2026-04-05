@@ -109,7 +109,7 @@ function handleAppointment(event) {
 
     const payload = { 
         patient_name: patient_name,
-        doctor_id: parseInt(doctor_id),
+        doctor_id: doctor_id,
         date: date,
         time: time
     };

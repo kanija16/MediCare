@@ -1,12 +1,13 @@
-from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from pymongo import MongoClient
+import os
 
-SQLALCHEMY_DATABASE_URL = "sqlite:///./medicare.db"
+# Default to localhost if no environment variable is provided
+MONGODB_URL = os.environ.get("MONGODB_URL", "mongodb://localhost:27017")
+DATABASE_NAME = "medicare_db"
 
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
-)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+client = MongoClient("mongodb+srv://kanija:kanija1234@kanija.fkea9cz.mongodb.net/?appName=medicare")
+db = client["medicare"]
 
-Base = declarative_base()
+def get_db():
+    return db
+
