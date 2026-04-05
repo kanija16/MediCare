@@ -1,4 +1,4 @@
-const API_BASE_URL = 'http://127.0.0.1:8000';
+const API_BASE_URL = 'https://medicare-backend-8hz4.onrender.com';
 
 /**
  * Fetch doctors from Backend and populate table OR dropdown
